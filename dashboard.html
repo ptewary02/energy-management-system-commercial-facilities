@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Energy management dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0F1115;
+    --panel: #171A20;
+    --panel-2: #1D2128;
+    --border: #262B33;
+    --text-primary: #E8EAED;
+    --text-secondary: #9AA1AC;
+    --text-muted: #656C78;
+    --teal: #2DD4A7;
+    --teal-dim: #143A31;
+    --amber: #F2A623;
+    --amber-dim: #3D2E10;
+    --coral: #E2574C;
+    --coral-dim: #3A1D1A;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: 'Inter', system-ui, sans-serif;
+    padding: 32px 40px 60px;
+  }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 28px;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .subtitle { font-size: 13px; color: var(--text-secondary); margin: 0; }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-muted);
+  }
+  .dot.live { background: var(--teal); animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(45,212,167,0.5); }
+    50% { box-shadow: 0 0 0 6px rgba(45,212,167,0); }
+  }
+
+  .config-row {
+    display: flex; gap: 8px; margin-bottom: 28px; align-items: center;
+  }
+  .config-row input {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text-primary);
+    font-family: 'IBM Plex Mono', monospace; font-size: 13px; padding: 8px 12px; border-radius: 6px;
+    width: 280px;
+  }
+  .config-row button {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text-primary);
+    font-size: 13px; padding: 8px 16px; border-radius: 6px; cursor: pointer;
+  }
+  .config-row button:hover { border-color: var(--teal); }
+
+  .zones-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .zone-chip {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .zone-name { font-size: 13px; color: var(--text-secondary); }
+  .zone-state { font-size: 13px; font-weight: 500; padding: 3px 10px; border-radius: 12px; }
+  .zone-state.on { background: var(--teal-dim); color: var(--teal); }
+  .zone-state.off { background: rgba(255,255,255,0.05); color: var(--text-muted); }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+  .kpi-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px;
+  }
+  .kpi-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+  .kpi-value { font-size: 28px; font-weight: 500; font-family: 'IBM Plex Mono', monospace; }
+  .kpi-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .kpi-card.peak .kpi-value { color: var(--coral); }
+  .kpi-card.cost .kpi-value { color: var(--amber); }
+  .kpi-card.renewable .kpi-value { color: var(--teal); }
+
+  .chart-panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 20px 24px; margin-bottom: 20px;
+  }
+  .chart-title { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+  .chart-wrap { position: relative; height: 320px; }
+
+  .live-values { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
+  .live-value-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+  .live-value-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+  .live-value-num { font-size: 18px; font-weight: 500; }
+
+  .error-banner {
+    background: var(--coral-dim); border: 1px solid var(--coral); color: var(--coral);
+    padding: 12px 16px; border-radius: 6px; font-size: 13px; margin-bottom: 20px; display: none;
+  }
+  footer { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Energy management dashboard</h1>
+    <p class="subtitle">AI-powered energy management system - live prototype view</p>
+  </div>
+  <div class="status">
+    <span class="dot" id="statusDot"></span>
+    <span id="statusText">Connecting...</span>
+  </div>
+</header>
+
+<div class="config-row">
+  <input type="text" id="backendUrl" value="http://10.121.43.212:5005" class="mono">
+  <button onclick="startPolling()">Connect</button>
+</div>
+
+<div class="error-banner" id="errorBanner"></div>
+
+<div class="chart-panel">
+  <div class="chart-title">Live power readings</div>
+  <div class="live-values" id="liveValues">
+    <div class="live-value-card"><div class="live-value-label">zone1</div><div class="live-value-num mono" id="liveZone1">- kW</div></div>
+    <div class="live-value-card"><div class="live-value-label">zone2</div><div class="live-value-num mono" id="liveZone2">- kW</div></div>
+    <div class="live-value-card"><div class="live-value-label">zone3</div><div class="live-value-num mono" id="liveZone3">- kW</div></div>
+    <div class="live-value-card"><div class="live-value-label">zone4</div><div class="live-value-num mono" id="liveZone4">- kW</div></div>
+    <div class="live-value-card"><div class="live-value-label">renewable</div><div class="live-value-num mono" id="liveRenewable">- kW</div></div>
+  </div>
+  <div class="chart-wrap" style="height: 220px;"><canvas id="liveChart"></canvas></div>
+</div>
+
+<div class="zones-row" id="zonesRow"></div>
+
+<div class="kpi-row">
+  <div class="kpi-card peak">
+    <div class="kpi-label">Peak reduction</div>
+    <div class="kpi-value mono" id="kpiPeak">-</div>
+    <div class="kpi-sub" id="kpiPeakSub">-</div>
+  </div>
+  <div class="kpi-card cost">
+    <div class="kpi-label">Cost reduction</div>
+    <div class="kpi-value mono" id="kpiCost">-</div>
+    <div class="kpi-sub" id="kpiCostSub">-</div>
+  </div>
+  <div class="kpi-card renewable">
+    <div class="kpi-label">Renewable used</div>
+    <div class="kpi-value mono" id="kpiRenewable">-</div>
+    <div class="kpi-sub" id="kpiRenewableSub">-</div>
+  </div>
+</div>
+
+<div class="chart-panel">
+  <div class="chart-title">Grid draw - before vs after optimization (next 24h)</div>
+  <div class="chart-wrap"><canvas id="loadChart"></canvas></div>
+</div>
+
+<footer id="lastUpdated">Not connected yet.</footer>
+
+<script>
+let chart = null;
+let liveChart = null;
+let pollTimer = null;
+let livePollTimer = null;
+
+function setStatus(live, text) {
+  document.getElementById('statusDot').className = 'dot' + (live ? ' live' : '');
+  document.getElementById('statusText').textContent = text;
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+function hideError() {
+  document.getElementById('errorBanner').style.display = 'none';
+}
+
+function renderZones(relayState) {
+  const row = document.getElementById('zonesRow');
+  const zones = ['zone1', 'zone2', 'zone3', 'zone4'];
+  row.innerHTML = zones.map(z => {
+    const on = relayState[z];
+    return `<div class="zone-chip"><span class="zone-name">${z}</span><span class="zone-state ${on ? 'on' : 'off'}">${on ? 'ON' : 'OFF'}</span></div>`;
+  }).join('');
+}
+
+function renderKpis(metrics) {
+  document.getElementById('kpiPeak').textContent = metrics.peak_reduction_pct.toFixed(1) + '%';
+  document.getElementById('kpiPeakSub').textContent = metrics.baseline_peak_kw.toFixed(1) + ' kW -> ' + metrics.optimized_peak_kw.toFixed(1) + ' kW';
+
+  document.getElementById('kpiCost').textContent = metrics.cost_reduction_pct.toFixed(1) + '%';
+  document.getElementById('kpiCostSub').textContent = 'Rs ' + metrics.baseline_cost_rs.toFixed(0) + ' -> Rs ' + metrics.optimized_cost_rs.toFixed(0);
+
+  document.getElementById('kpiRenewable').textContent = metrics.optimized_renewable_used_kwh.toFixed(1) + ' kWh';
+  document.getElementById('kpiRenewableSub').textContent = (metrics.renewable_gain_pct >= 0 ? '+' : '') + metrics.renewable_gain_pct.toFixed(1) + '% vs before';
+}
+
+function renderChart(curves) {
+  const labels = curves.baseline_grid_draw.map((_, i) => i + ':00');
+  const capacityLine = curves.baseline_grid_draw.map(() => curves.capacity_target_kw);
+
+  const data = {
+    labels,
+    datasets: [
+      { label: 'Before', data: curves.baseline_grid_draw, borderColor: '#E2574C', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+      { label: 'After', data: curves.optimized_grid_draw, borderColor: '#2DD4A7', backgroundColor: 'transparent', borderWidth: 2, borderDash: [5,4], tension: 0.3, pointRadius: 0 },
+      { label: 'Capacity target', data: capacityLine, borderColor: '#656C78', backgroundColor: 'transparent', borderWidth: 1, borderDash: [2,3], pointRadius: 0 },
+    ]
+  };
+
+  const options = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: '#9AA1AC', font: { family: 'Inter', size: 12 } } }
+    },
+    scales: {
+      x: { ticks: { color: '#656C78', font: { size: 11 } }, grid: { color: '#262B33' } },
+      y: { ticks: { color: '#656C78', font: { size: 11 } }, grid: { color: '#262B33' }, title: { display: true, text: 'kW', color: '#656C78' } }
+    }
+  };
+
+  if (chart) {
+    chart.data = data;
+    chart.update();
+  } else {
+    chart = new Chart(document.getElementById('loadChart'), { type: 'line', data, options });
+  }
+}
+
+function renderLiveValues(latest) {
+  document.getElementById('liveZone1').textContent = latest.zone1_kw.toFixed(2) + ' kW';
+  document.getElementById('liveZone2').textContent = latest.zone2_kw.toFixed(2) + ' kW';
+  document.getElementById('liveZone3').textContent = latest.zone3_kw.toFixed(2) + ' kW';
+  document.getElementById('liveZone4').textContent = latest.zone4_kw.toFixed(2) + ' kW';
+  document.getElementById('liveRenewable').textContent = latest.renewable_kw.toFixed(2) + ' kW';
+}
+
+function renderLiveChart(history) {
+  const data = {
+    labels: history.timestamps,
+    datasets: [
+      { label: 'zone1', data: history.zone1_kw, borderColor: '#2DD4A7', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+      { label: 'zone2', data: history.zone2_kw, borderColor: '#F2A623', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+      { label: 'zone3', data: history.zone3_kw, borderColor: '#378ADD', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+      { label: 'zone4', data: history.zone4_kw, borderColor: '#E2574C', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+    ]
+  };
+  const options = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#9AA1AC', font: { family: 'Inter', size: 11 } } } },
+    scales: {
+      x: { ticks: { color: '#656C78', font: { size: 10 }, maxTicksLimit: 8 }, grid: { color: '#262B33' } },
+      y: { ticks: { color: '#656C78', font: { size: 11 } }, grid: { color: '#262B33' }, title: { display: true, text: 'kW', color: '#656C78' } }
+    }
+  };
+  if (liveChart) {
+    liveChart.data = data;
+    liveChart.update();
+  } else {
+    liveChart = new Chart(document.getElementById('liveChart'), { type: 'line', data, options });
+  }
+}
+
+async function pollLiveOnce() {
+  const base = document.getElementById('backendUrl').value.trim();
+  try {
+    const res = await fetch(base + '/latest');
+    if (res.status === 404) return; // no readings posted yet - stay quiet, not an error
+    if (!res.ok) throw new Error('Server responded with ' + res.status);
+    const data = await res.json();
+    renderLiveValues(data.latest);
+    renderLiveChart(data.history);
+  } catch (err) {
+    // live readings are secondary - don't override the main connection error banner
+  }
+}
+
+async function pollOnce() {
+  const base = document.getElementById('backendUrl').value.trim();
+  try {
+    const res = await fetch(base + '/commands');
+    if (!res.ok) throw new Error('Server responded with ' + res.status);
+    const data = await res.json();
+
+    hideError();
+    setStatus(true, 'Connected');
+    renderZones(data.relay_state);
+    renderKpis(data.metrics);
+    renderChart(data.curves);
+    document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString() + ' (backend timestamp: ' + data.generated_at + ')';
+  } catch (err) {
+    setStatus(false, 'Disconnected');
+    showError('Could not reach backend at ' + base + ' - ' + err.message + '. Check the URL and that app.py is running.');
+  }
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  if (livePollTimer) clearInterval(livePollTimer);
+  pollOnce();
+  pollLiveOnce();
+  pollTimer = setInterval(pollOnce, 30000);
+  livePollTimer = setInterval(pollLiveOnce, 5000);
+}
+
+startPolling();
+</script>
+
+</body>
+</html>
