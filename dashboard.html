@@ -2,319 +2,2575 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Energy management dashboard</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #0F1115;
-    --panel: #171A20;
-    --panel-2: #1D2128;
-    --border: #262B33;
-    --text-primary: #E8EAED;
-    --text-secondary: #9AA1AC;
-    --text-muted: #656C78;
-    --teal: #2DD4A7;
-    --teal-dim: #143A31;
-    --amber: #F2A623;
-    --amber-dim: #3D2E10;
-    --coral: #E2574C;
-    --coral-dim: #3A1D1A;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text-primary);
-    font-family: 'Inter', system-ui, sans-serif;
-    padding: 32px 40px 60px;
-  }
-  .mono { font-family: 'IBM Plex Mono', monospace; }
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  header {
+<title>Energy Management System | MMMUT</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+
+:root {
+    --bg: #07111d;
+    --panel: #0d1926;
+    --panel2: #112131;
+    --panel3: #14283a;
+
+    --border: #24394c;
+
+    --text: #f1f5f9;
+    --secondary: #a8b5c5;
+    --muted: #64748b;
+
+    --green: #2dd4a7;
+    --green-dark: rgba(45,212,167,.12);
+
+    --blue: #4db5ff;
+    --blue-dark: rgba(77,181,255,.12);
+
+    --orange: #f5a623;
+    --red: #ff6673;
+    --red-dark: rgba(255,102,115,.12);
+
+    --purple: #a970ff;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+
+    background:
+        radial-gradient(circle at 10% 0%, rgba(45,212,167,.07), transparent 25%),
+        radial-gradient(circle at 90% 5%, rgba(77,181,255,.06), transparent 25%),
+        var(--bg);
+}
+
+.container {
+    max-width: 1600px;
+    margin: auto;
+    padding: 0 32px 25px;
+}
+
+.mono {
+    font-family: 'IBM Plex Mono', monospace;
+}
+
+/* =========================================================
+   UNIVERSITY HEADER
+   ========================================================= */
+
+.university-header {
+    min-height: 100px;
+
+    border-bottom: 1px solid var(--border);
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 25px;
+
+    padding: 14px 35px;
+
+    background:
+        linear-gradient(
+            90deg,
+            rgba(7,17,29,.98),
+            rgba(13,31,48,.93),
+            rgba(7,17,29,.98)
+        );
+}
+
+.university-left {
+    display: flex;
+    align-items: center;
+    gap: 17px;
+}
+
+.logo {
+    width: 72px;
+    height: 72px;
+
+    object-fit: contain;
+
+    background: white;
+    border-radius: 50%;
+    padding: 3px;
+
+    box-shadow: 0 0 20px rgba(77,181,255,.15);
+}
+
+.university-name {
+    font-family: Georgia, serif;
+
+    font-size: 22px;
+    font-weight: bold;
+
+    letter-spacing: .8px;
+
+    margin-bottom: 5px;
+}
+
+.university-location {
+    font-family: Georgia, serif;
+
+    color: #d1d9e5;
+
+    font-size: 14px;
+    letter-spacing: .8px;
+
+    margin-bottom: 5px;
+}
+
+.university-tagline {
+    color: var(--secondary);
+
+    font-size: 12px;
+
+    font-style: italic;
+    font-family: Georgia, serif;
+}
+
+.header-sustainability {
+    text-align: right;
+
+    color: #dbeafe;
+
+    font-family: Georgia, serif;
+
+    font-size: 11px;
+    line-height: 1.5;
+
+    letter-spacing: .6px;
+
+    padding-right: 12px;
+
+    border-right: 2px solid var(--green);
+}
+
+/* =========================================================
+   PROJECT HEADER
+   ========================================================= */
+
+.project-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-end;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 20px;
-    margin-bottom: 28px;
-  }
-  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
-  .subtitle { font-size: 13px; color: var(--text-secondary); margin: 0; }
-  .status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
-  .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--text-muted);
-  }
-  .dot.live { background: var(--teal); animation: pulse 2s ease-in-out infinite; }
-  @keyframes pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(45,212,167,0.5); }
-    50% { box-shadow: 0 0 0 6px rgba(45,212,167,0); }
-  }
+    align-items: center;
 
-  .config-row {
-    display: flex; gap: 8px; margin-bottom: 28px; align-items: center;
-  }
-  .config-row input {
-    background: var(--panel); border: 1px solid var(--border); color: var(--text-primary);
-    font-family: 'IBM Plex Mono', monospace; font-size: 13px; padding: 8px 12px; border-radius: 6px;
-    width: 280px;
-  }
-  .config-row button {
-    background: var(--panel-2); border: 1px solid var(--border); color: var(--text-primary);
-    font-size: 13px; padding: 8px 16px; border-radius: 6px; cursor: pointer;
-  }
-  .config-row button:hover { border-color: var(--teal); }
+    padding: 17px 0 15px;
 
-  .zones-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-  .zone-chip {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-    padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;
-  }
-  .zone-name { font-size: 13px; color: var(--text-secondary); }
-  .zone-state { font-size: 13px; font-weight: 500; padding: 3px 10px; border-radius: 12px; }
-  .zone-state.on { background: var(--teal-dim); color: var(--teal); }
-  .zone-state.off { background: rgba(255,255,255,0.05); color: var(--text-muted); }
+    gap: 20px;
+}
 
-  .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
-  .kpi-card {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px;
-  }
-  .kpi-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
-  .kpi-value { font-size: 28px; font-weight: 500; font-family: 'IBM Plex Mono', monospace; }
-  .kpi-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-  .kpi-card.peak .kpi-value { color: var(--coral); }
-  .kpi-card.cost .kpi-value { color: var(--amber); }
-  .kpi-card.renewable .kpi-value { color: var(--teal); }
+.project-heading {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
 
-  .chart-panel {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-    padding: 20px 24px; margin-bottom: 20px;
-  }
-  .chart-title { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
-  .chart-wrap { position: relative; height: 320px; }
+.project-icon {
+    width: 44px;
+    height: 44px;
 
-  .live-values { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
-  .live-value-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
-  .live-value-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
-  .live-value-num { font-size: 18px; font-weight: 500; }
+    display: flex;
+    align-items: center;
+    justify-content: center;
 
-  .error-banner {
-    background: var(--coral-dim); border: 1px solid var(--coral); color: var(--coral);
-    padding: 12px 16px; border-radius: 6px; font-size: 13px; margin-bottom: 20px; display: none;
-  }
-  footer { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
+    border-radius: 12px;
+
+    background: var(--green-dark);
+
+    font-size: 24px;
+}
+
+.project-title {
+    margin: 0 0 3px;
+
+    font-size: 23px;
+    font-weight: 700;
+}
+
+.project-subtitle {
+    margin: 0;
+
+    color: var(--secondary);
+
+    font-size: 12px;
+}
+
+.feature-badges {
+    display: flex;
+    gap: 8px;
+
+    flex-wrap: wrap;
+
+    justify-content: flex-end;
+}
+
+.feature {
+    padding: 8px 12px;
+
+    background: var(--panel);
+
+    border: 1px solid var(--border);
+
+    border-radius: 8px;
+
+    color: var(--secondary);
+
+    font-size: 11px;
+}
+
+.feature span {
+    margin-right: 6px;
+}
+
+/* =========================================================
+   CONNECTION
+   ========================================================= */
+
+.connection-bar {
+    display: grid;
+
+    grid-template-columns: 1.2fr 1fr .65fr;
+
+    gap: 12px;
+
+    margin-bottom: 13px;
+}
+
+.connection-card {
+    min-height: 54px;
+
+    background: var(--panel);
+
+    border: 1px solid var(--border);
+    border-radius: 9px;
+
+    padding: 8px 14px;
+
+    display: flex;
+    align-items: center;
+
+    gap: 9px;
+}
+
+.connection-label {
+    font-size: 11px;
+    font-weight: 600;
+
+    white-space: nowrap;
+}
+
+.connection-card input {
+    flex: 1;
+    min-width: 0;
+
+    background: var(--panel2);
+
+    color: var(--text);
+
+    border: 1px solid #38516a;
+
+    border-radius: 6px;
+
+    padding: 9px 11px;
+
+    font-family: 'IBM Plex Mono', monospace;
+
+    outline: none;
+}
+
+.connection-card input:focus {
+    border-color: var(--blue);
+}
+
+.connect-button {
+    border: 0;
+
+    color: white;
+
+    background:
+        linear-gradient(
+            135deg,
+            #159d72,
+            #16b981
+        );
+
+    padding: 10px 18px;
+
+    border-radius: 6px;
+
+    cursor: pointer;
+
+    font-weight: 600;
+}
+
+.connect-button:hover {
+    filter: brightness(1.1);
+}
+
+.status-dot {
+    width: 13px;
+    height: 13px;
+
+    flex-shrink: 0;
+
+    border-radius: 50%;
+
+    background: var(--red);
+}
+
+.status-dot.live {
+    background: var(--green);
+
+    box-shadow:
+        0 0 12px rgba(45,212,167,.7);
+
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+
+    0%, 100% {
+        box-shadow:
+            0 0 0 0 rgba(45,212,167,.4);
+    }
+
+    50% {
+        box-shadow:
+            0 0 0 7px rgba(45,212,167,0);
+    }
+}
+
+.status-main {
+    color: var(--green);
+
+    font-size: 13px;
+
+    font-weight: 600;
+}
+
+.status-sub {
+    color: var(--secondary);
+
+    font-size: 10px;
+
+    margin-top: 2px;
+}
+
+.clock-card {
+    justify-content: center;
+}
+
+.clock-icon {
+    font-size: 20px;
+
+    color: var(--blue);
+}
+
+.clock-text {
+    font-size: 11px;
+
+    line-height: 1.5;
+}
+
+/* =========================================================
+   ERROR
+   ========================================================= */
+
+.error-banner {
+    display: none;
+
+    background: var(--red-dark);
+
+    border: 1px solid var(--red);
+
+    color: #ff9da5;
+
+    border-radius: 7px;
+
+    padding: 10px 14px;
+
+    margin-bottom: 13px;
+
+    font-size: 11px;
+}
+
+/* =========================================================
+   PANELS
+   ========================================================= */
+
+.monitor-grid {
+    display: grid;
+
+    grid-template-columns: 1.4fr 1fr;
+
+    gap: 12px;
+
+    margin-bottom: 13px;
+}
+
+.panel {
+    background:
+        linear-gradient(
+            145deg,
+            rgba(13,25,38,.98),
+            rgba(12,27,41,.95)
+        );
+
+    border: 1px solid var(--border);
+
+    border-radius: 10px;
+
+    padding: 15px;
+}
+
+.panel-header {
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 15px;
+
+    margin-bottom: 13px;
+}
+
+.panel-title {
+    font-size: 14px;
+
+    font-weight: 600;
+}
+
+.panel-description {
+    color: var(--secondary);
+
+    font-size: 10px;
+}
+
+/* =========================================================
+   LIVE POWER READINGS
+   ========================================================= */
+
+.live-grid {
+    display: grid;
+
+    grid-template-columns: repeat(4, 1fr);
+
+    gap: 10px;
+}
+
+.live-card {
+    min-height: 96px;
+
+    background: var(--panel2);
+
+    border: 1px solid var(--border);
+
+    border-radius: 8px;
+
+    padding: 12px;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 11px;
+
+    transition:
+        transform .2s ease,
+        border-color .2s ease;
+}
+
+.live-card:hover {
+    transform: translateY(-2px);
+
+    border-color: #3a5872;
+}
+
+.live-icon {
+    width: 38px;
+    height: 38px;
+
+    flex-shrink: 0;
+
+    display: flex;
+
+    justify-content: center;
+
+    align-items: center;
+
+    border-radius: 50%;
+
+    background: var(--blue-dark);
+
+    font-size: 18px;
+}
+
+.live-label {
+    font-size: 12px;
+
+    font-weight: 600;
+}
+
+.live-type {
+    color: var(--secondary);
+
+    font-size: 10px;
+
+    margin-top: 2px;
+}
+
+.live-number {
+    font-size: 18px;
+
+    font-weight: 600;
+
+    margin-top: 7px;
+}
+
+.zone1-value {
+    color: #46c4ff;
+}
+
+.zone2-value {
+    color: #ff9f43;
+}
+
+.zone3-value {
+    color: var(--purple);
+}
+
+.renewable-value {
+    color: var(--green);
+}
+
+/* =========================================================
+   RELAY STATUS
+   ========================================================= */
+
+.relay-grid {
+    display: grid;
+
+    grid-template-columns: repeat(3, 1fr);
+
+    gap: 10px;
+}
+
+.relay-card {
+    min-height: 96px;
+
+    background: var(--panel2);
+
+    border: 1px solid var(--border);
+
+    border-radius: 8px;
+
+    padding: 12px;
+
+    transition:
+        transform .2s ease,
+        border-color .2s ease;
+}
+
+.relay-card:hover {
+    transform: translateY(-2px);
+
+    border-color: #3a5872;
+}
+
+.relay-name {
+    font-size: 12px;
+
+    font-weight: 600;
+
+    margin-bottom: 4px;
+}
+
+.relay-description {
+    font-size: 9px;
+
+    color: var(--secondary);
+
+    margin-bottom: 13px;
+}
+
+.relay-state {
+    display: inline-flex;
+
+    align-items: center;
+
+    gap: 6px;
+
+    padding: 5px 9px;
+
+    border-radius: 20px;
+
+    font-size: 10px;
+
+    font-weight: 600;
+}
+
+.relay-state.on {
+    background: rgba(45,212,167,.17);
+
+    color: var(--green);
+}
+
+.relay-state.off {
+    background: rgba(255,102,115,.12);
+
+    color: var(--red);
+}
+
+.relay-indicator {
+    width: 8px;
+    height: 8px;
+
+    background: currentColor;
+
+    border-radius: 50%;
+}
+
+/* =========================================================
+   KPI
+   ========================================================= */
+
+.kpi-grid {
+    display: grid;
+
+    grid-template-columns: repeat(3, 1fr);
+
+    gap: 12px;
+
+    margin-bottom: 13px;
+}
+
+.kpi-card {
+    min-height: 112px;
+
+    border-radius: 10px;
+
+    padding: 17px 19px;
+
+    background: var(--panel);
+
+    position: relative;
+
+    overflow: hidden;
+}
+
+.kpi-card::after {
+    content: "";
+
+    position: absolute;
+
+    width: 100px;
+    height: 100px;
+
+    border-radius: 50%;
+
+    right: -40px;
+    top: -40px;
+
+    opacity: .08;
+
+    background: currentColor;
+}
+
+.kpi-peak {
+    border: 1px solid var(--red);
+
+    color: var(--red);
+}
+
+.kpi-cost {
+    border: 1px solid var(--orange);
+
+    color: var(--orange);
+}
+
+.kpi-renewable {
+    border: 1px solid var(--green);
+
+    color: var(--green);
+}
+
+.kpi-title {
+    font-size: 12px;
+
+    font-weight: 600;
+
+    margin-bottom: 8px;
+}
+
+.kpi-number {
+    font-size: 27px;
+
+    font-weight: 700;
+
+    font-family:
+        'IBM Plex Mono',
+        monospace;
+}
+
+.kpi-sub {
+    color: var(--secondary);
+
+    font-size: 10px;
+
+    margin-top: 6px;
+}
+
+/* =========================================================
+   CHARTS
+   ========================================================= */
+
+.charts-grid {
+    display: grid;
+
+    grid-template-columns: 1fr 1fr;
+
+    gap: 12px;
+}
+
+.chart-container {
+    height: 290px;
+
+    position: relative;
+}
+
+/* =========================================================
+   FOOTER
+   ========================================================= */
+
+.footer {
+    margin-top: 20px;
+
+    border-top: 1px solid var(--border);
+
+    padding: 20px 0 8px;
+}
+
+.footer-grid {
+    display: grid;
+
+    grid-template-columns:
+        1.1fr 1.3fr 1fr;
+
+    gap: 30px;
+
+    align-items: start;
+}
+
+.footer-section {
+    padding-right: 20px;
+}
+
+.footer-section:not(:last-child) {
+    border-right:
+        1px solid var(--border);
+}
+
+.footer-title {
+    color: var(--secondary);
+
+    font-size: 10px;
+
+    text-transform: uppercase;
+
+    letter-spacing: .5px;
+
+    margin-bottom: 7px;
+}
+
+.mentor-name {
+    font-size: 16px;
+
+    font-weight: 700;
+
+    margin-bottom: 5px;
+}
+
+.footer-text {
+    color: var(--secondary);
+
+    font-size: 11px;
+
+    line-height: 1.6;
+}
+
+.members-list {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 4px;
+}
+
+.member {
+    color: var(--secondary);
+
+    font-size: 11px;
+
+    line-height: 1.5;
+
+    white-space: nowrap;
+}
+
+.footer-quote {
+    font-family: Georgia, serif;
+
+    font-style: italic;
+
+    color: #cbd5e1;
+
+    font-size: 15px;
+
+    line-height: 1.6;
+
+    text-align: center;
+}
+
+.footer-bottom {
+    margin-top: 17px;
+
+    padding-top: 12px;
+
+    border-top:
+        1px solid var(--border);
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    gap: 15px;
+
+    color: var(--muted);
+
+    font-size: 9px;
+}
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media(max-width:1200px) {
+
+    .project-header {
+        align-items: flex-start;
+
+        flex-direction: column;
+    }
+
+    .feature-badges {
+        justify-content: flex-start;
+    }
+
+    .monitor-grid,
+    .charts-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .connection-bar {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media(max-width:900px) {
+
+    .university-header {
+        flex-direction: column;
+
+        align-items: flex-start;
+    }
+
+    .header-sustainability {
+        text-align: left;
+
+        border-right: 0;
+
+        border-left:
+            2px solid var(--green);
+
+        padding-left: 12px;
+    }
+
+    .live-grid {
+        grid-template-columns:
+            repeat(2, 1fr);
+    }
+
+    .relay-grid,
+    .kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .footer-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .footer-section:not(:last-child) {
+        border-right: none;
+
+        border-bottom:
+            1px solid var(--border);
+
+        padding-bottom: 15px;
+    }
+
+    .footer-bottom {
+        flex-direction: column;
+
+        align-items: flex-start;
+    }
+}
+
+@media(max-width:600px) {
+
+    .container {
+        padding:
+            0 14px 20px;
+    }
+
+    .university-header {
+        padding:
+            15px 14px;
+    }
+
+    .university-left {
+        align-items: flex-start;
+    }
+
+    .logo {
+        width: 58px;
+        height: 58px;
+    }
+
+    .university-name {
+        font-size: 16px;
+    }
+
+    .university-location {
+        font-size: 11px;
+    }
+
+    .university-tagline {
+        font-size: 10px;
+    }
+
+    .live-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .member {
+        white-space: normal;
+    }
+}
+
 </style>
 </head>
+
 <body>
 
-<header>
-  <div>
-    <h1>Energy management dashboard</h1>
-    <p class="subtitle">AI-powered energy management system - live prototype view</p>
-  </div>
-  <div class="status">
-    <span class="dot" id="statusDot"></span>
-    <span id="statusText">Connecting...</span>
-  </div>
-</header>
+<!-- =====================================================
+     MMMUT HEADER
+     ===================================================== -->
 
-<div class="config-row">
-  <input type="text" id="backendUrl" value="http://10.121.43.212:5005" class="mono">
-  <button onclick="startPolling()">Connect</button>
+<div class="university-header">
+
+    <div class="university-left">
+
+        <img
+            src="mmmut-logo.png"
+            class="logo"
+            alt="MMMUT Logo"
+        >
+
+        <div>
+
+            <div class="university-name">
+                MADAN MOHAN MALAVIYA UNIVERSITY OF TECHNOLOGY
+            </div>
+
+            <div class="university-location">
+                GORAKHPUR, UTTAR PRADESH, INDIA
+            </div>
+
+            <div class="university-tagline">
+                “Innovation for a Better Tomorrow”
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div class="header-sustainability">
+
+        ENERGY EFFICIENT<br>
+
+        SUSTAINABLE CAMPUS<br>
+
+        GREENER TOMORROW
+
+    </div>
+
 </div>
 
-<div class="error-banner" id="errorBanner"></div>
 
-<div class="chart-panel">
-  <div class="chart-title">Live power readings</div>
-  <div class="live-values" id="liveValues">
-    <div class="live-value-card"><div class="live-value-label">zone1</div><div class="live-value-num mono" id="liveZone1">- kW</div></div>
-    <div class="live-value-card"><div class="live-value-label">zone2</div><div class="live-value-num mono" id="liveZone2">- kW</div></div>
-    <div class="live-value-card"><div class="live-value-label">zone3</div><div class="live-value-num mono" id="liveZone3">- kW</div></div>
-    <div class="live-value-card"><div class="live-value-label">zone4</div><div class="live-value-num mono" id="liveZone4">- kW</div></div>
-    <div class="live-value-card"><div class="live-value-label">renewable</div><div class="live-value-num mono" id="liveRenewable">- kW</div></div>
-  </div>
-  <div class="chart-wrap" style="height: 220px;"><canvas id="liveChart"></canvas></div>
+<div class="container">
+
+<!-- =====================================================
+     PROJECT HEADER
+     ===================================================== -->
+
+<div class="project-header">
+
+    <div class="project-heading">
+
+        <div class="project-icon">
+            🌿
+        </div>
+
+        <div>
+
+            <h1 class="project-title">
+                Energy Management System
+            </h1>
+
+            <p class="project-subtitle">
+                AI-Powered Energy Management for Commercial Facilities
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <div class="feature-badges">
+
+        <div class="feature">
+            <span>▥</span>
+            Real-time Monitoring
+        </div>
+
+        <div class="feature">
+            <span>◉</span>
+            AI Forecasting
+        </div>
+
+        <div class="feature">
+            <span>⚙</span>
+            Optimal Scheduling
+        </div>
+
+        <div class="feature">
+            <span>⚡</span>
+            Load Control
+        </div>
+
+        <div class="feature">
+            <span>🌱</span>
+            Sustainable Future
+        </div>
+
+    </div>
+
 </div>
 
-<div class="zones-row" id="zonesRow"></div>
 
-<div class="kpi-row">
-  <div class="kpi-card peak">
-    <div class="kpi-label">Peak reduction</div>
-    <div class="kpi-value mono" id="kpiPeak">-</div>
-    <div class="kpi-sub" id="kpiPeakSub">-</div>
-  </div>
-  <div class="kpi-card cost">
-    <div class="kpi-label">Cost reduction</div>
-    <div class="kpi-value mono" id="kpiCost">-</div>
-    <div class="kpi-sub" id="kpiCostSub">-</div>
-  </div>
-  <div class="kpi-card renewable">
-    <div class="kpi-label">Renewable used</div>
-    <div class="kpi-value mono" id="kpiRenewable">-</div>
-    <div class="kpi-sub" id="kpiRenewableSub">-</div>
-  </div>
+<!-- =====================================================
+     CONNECTION BAR
+     ===================================================== -->
+
+<div class="connection-bar">
+
+    <div class="connection-card">
+
+        <span class="connection-label">
+            Backend URL
+        </span>
+
+        <input
+            type="text"
+            id="backendUrl"
+            value="http://127.0.0.1:5005"
+        >
+
+        <button
+            class="connect-button"
+            onclick="startPolling()"
+        >
+            Connect
+        </button>
+
+    </div>
+
+
+    <div class="connection-card">
+
+        <div
+            class="status-dot"
+            id="statusDot"
+        ></div>
+
+        <div>
+
+            <div
+                class="status-main"
+                id="statusText"
+            >
+                Connecting...
+            </div>
+
+            <div class="status-sub">
+                Energy management backend
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div class="connection-card clock-card">
+
+        <div class="clock-icon">
+            ◷
+        </div>
+
+        <div
+            class="clock-text"
+            id="clock"
+        >
+            --
+        </div>
+
+    </div>
+
 </div>
 
-<div class="chart-panel">
-  <div class="chart-title">Grid draw - before vs after optimization (next 24h)</div>
-  <div class="chart-wrap"><canvas id="loadChart"></canvas></div>
+
+<div
+    class="error-banner"
+    id="errorBanner"
+></div>
+
+
+<!-- =====================================================
+     LIVE MONITORING + RELAY STATUS
+     ===================================================== -->
+
+<div class="monitor-grid">
+
+
+    <!-- LIVE POWER -->
+
+    <div class="panel">
+
+        <div class="panel-header">
+
+            <div class="panel-title">
+                ⚡ &nbsp; Live Power Readings
+            </div>
+
+            <div class="panel-description">
+                Real-time data from sensors
+            </div>
+
+        </div>
+
+
+        <div class="live-grid">
+
+
+            <div class="live-card">
+
+                <div class="live-icon">
+                    💡
+                </div>
+
+                <div>
+
+                    <div class="live-label">
+                        Zone 1
+                    </div>
+
+                    <div class="live-type">
+                        Lighting / Office
+                    </div>
+
+                    <div
+                        class="live-number zone1-value mono"
+                        id="liveZone1"
+                    >
+                        - kW
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="live-card">
+
+                <div class="live-icon">
+                    ❄
+                </div>
+
+                <div>
+
+                    <div class="live-label">
+                        Zone 2
+                    </div>
+
+                    <div class="live-type">
+                        HVAC / AC
+                    </div>
+
+                    <div
+                        class="live-number zone2-value mono"
+                        id="liveZone2"
+                    >
+                        - kW
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="live-card">
+
+                <div class="live-icon">
+                    🖥
+                </div>
+
+                <div>
+
+                    <div class="live-label">
+                        Zone 3
+                    </div>
+
+                    <div class="live-type">
+                        Equipment
+                    </div>
+
+                    <div
+                        class="live-number zone3-value mono"
+                        id="liveZone3"
+                    >
+                        - kW
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="live-card">
+
+                <div class="live-icon">
+                    ☀
+                </div>
+
+                <div>
+
+                    <div class="live-label">
+                        Renewable
+                    </div>
+
+                    <div class="live-type">
+                        Solar / Renewable
+                    </div>
+
+                    <div
+                        class="live-number renewable-value mono"
+                        id="liveRenewable"
+                    >
+                        - kW
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- RELAYS -->
+
+    <div class="panel">
+
+        <div class="panel-header">
+
+            <div class="panel-title">
+                ⏻ &nbsp; Relay Status
+            </div>
+
+            <div class="panel-description">
+                Controllable Loads
+            </div>
+
+        </div>
+
+        <div
+            class="relay-grid"
+            id="zonesRow"
+        ></div>
+
+    </div>
+
 </div>
 
-<footer id="lastUpdated">Not connected yet.</footer>
+
+<!-- =====================================================
+     KPIs
+     ===================================================== -->
+
+<div class="kpi-grid">
+
+
+    <div class="kpi-card kpi-peak">
+
+        <div class="kpi-title">
+            ▥ &nbsp; Peak Reduction
+        </div>
+
+        <div
+            class="kpi-number"
+            id="kpiPeak"
+        >
+            -
+        </div>
+
+        <div
+            class="kpi-sub"
+            id="kpiPeakSub"
+        >
+            Compared to baseline demand
+        </div>
+
+    </div>
+
+
+    <div class="kpi-card kpi-cost">
+
+        <div class="kpi-title">
+            ◎ &nbsp; Cost Reduction
+        </div>
+
+        <div
+            class="kpi-number"
+            id="kpiCost"
+        >
+            -
+        </div>
+
+        <div
+            class="kpi-sub"
+            id="kpiCostSub"
+        >
+            Estimated electricity cost savings
+        </div>
+
+    </div>
+
+
+    <div class="kpi-card kpi-renewable">
+
+        <div class="kpi-title">
+            🌿 &nbsp; Renewable Energy Used
+        </div>
+
+        <div
+            class="kpi-number"
+            id="kpiRenewable"
+        >
+            -
+        </div>
+
+        <div
+            class="kpi-sub"
+            id="kpiRenewableSub"
+        >
+            Renewable energy utilization
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     CHARTS
+     ===================================================== -->
+
+<div class="charts-grid">
+
+
+    <div class="panel">
+
+        <div class="panel-header">
+
+            <div class="panel-title">
+                📈 &nbsp; Grid Demand - Before vs After Optimization
+            </div>
+
+            <div class="panel-description">
+                Next 24 Hours
+            </div>
+
+        </div>
+
+        <div class="chart-container">
+
+            <canvas id="loadChart"></canvas>
+
+        </div>
+
+    </div>
+
+
+    <div class="panel">
+
+        <div class="panel-header">
+
+            <div class="panel-title">
+                ▥ &nbsp; Zone-wise Live Power
+            </div>
+
+            <div class="panel-description">
+                Recent Sensor History
+            </div>
+
+        </div>
+
+        <div class="chart-container">
+
+            <canvas id="liveChart"></canvas>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     FOOTER
+     ===================================================== -->
+
+<footer class="footer">
+
+    <div class="footer-grid">
+
+
+        <!-- MENTOR -->
+
+        <div class="footer-section">
+
+            <div class="footer-title">
+                Project Mentor
+            </div>
+
+            <div class="mentor-name">
+                Prof. A.K. Pandey
+            </div>
+
+            <div class="footer-text">
+
+                Department of Electrical Engineering
+
+                <br>
+
+                Madan Mohan Malaviya University of Technology
+
+                <br>
+
+                Gorakhpur
+
+            </div>
+
+        </div>
+
+
+        <!-- GROUP MEMBERS -->
+
+        <div class="footer-section">
+
+            <div class="footer-title">
+                Group Members
+            </div>
+
+            <div class="members-list">
+
+                <div class="member">
+                    1. Mayank Agrawal
+                </div>
+
+                <div class="member">
+                    2. Pravesh Kumar Chaudhari
+                </div>
+
+                <div class="member">
+                    3. Pravesh Tewary
+                </div>
+
+                <div class="member">
+                    4. Rachit Srivastava
+                </div>
+
+                <div class="member">
+                    5. Vishal Yadav
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- QUOTE -->
+
+        <div class="footer-section">
+
+            <div class="footer-quote">
+
+                “Efficient Energy Management
+
+                <br>
+
+                for a Sustainable Future”
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div class="footer-bottom">
+
+        <span id="lastUpdated">
+            Not connected yet.
+        </span>
+
+        <span>
+            MADAN MOHAN MALAVIYA UNIVERSITY OF TECHNOLOGY, GORAKHPUR
+        </span>
+
+        <span>
+            2026
+        </span>
+
+    </div>
+
+</footer>
+
+</div>
+
 
 <script>
-let chart = null;
+
+/* =========================================================
+   VARIABLES
+   ========================================================= */
+
+let loadChart = null;
+
 let liveChart = null;
+
 let pollTimer = null;
+
 let livePollTimer = null;
 
+
+/* =========================================================
+   CONNECTION STATUS
+   ========================================================= */
+
 function setStatus(live, text) {
-  document.getElementById('statusDot').className = 'dot' + (live ? ' live' : '');
-  document.getElementById('statusText').textContent = text;
+
+    const dot =
+        document.getElementById(
+            "statusDot"
+        );
+
+    const status =
+        document.getElementById(
+            "statusText"
+        );
+
+
+    dot.className =
+        "status-dot" +
+        (live ? " live" : "");
+
+
+    status.textContent = text;
+
+
+    if (live) {
+
+        status.style.color =
+            "#2dd4a7";
+
+    } else {
+
+        status.style.color =
+            "#ff6673";
+
+    }
 }
 
-function showError(msg) {
-  const el = document.getElementById('errorBanner');
-  el.style.display = 'block';
-  el.textContent = msg;
+
+/* =========================================================
+   ERROR
+   ========================================================= */
+
+function showError(message) {
+
+    const banner =
+        document.getElementById(
+            "errorBanner"
+        );
+
+    banner.style.display =
+        "block";
+
+    banner.textContent =
+        message;
 }
+
+
 function hideError() {
-  document.getElementById('errorBanner').style.display = 'none';
+
+    document.getElementById(
+        "errorBanner"
+    ).style.display =
+        "none";
 }
+
+
+/* =========================================================
+   CLOCK
+   ========================================================= */
+
+function updateClock() {
+
+    const now =
+        new Date();
+
+
+    const date =
+        now.toLocaleDateString(
+            "en-IN",
+            {
+                day: "2-digit",
+                month: "long",
+                year: "numeric"
+            }
+        );
+
+
+    const time =
+        now.toLocaleTimeString(
+            "en-IN"
+        );
+
+
+    document.getElementById(
+        "clock"
+    ).innerHTML =
+        date +
+        "<br>" +
+        time;
+}
+
+
+updateClock();
+
+setInterval(
+    updateClock,
+    1000
+);
+
+
+/* =========================================================
+   RELAY STATUS - 3 ZONES
+   ========================================================= */
 
 function renderZones(relayState) {
-  const row = document.getElementById('zonesRow');
-  const zones = ['zone1', 'zone2', 'zone3', 'zone4'];
-  row.innerHTML = zones.map(z => {
-    const on = relayState[z];
-    return `<div class="zone-chip"><span class="zone-name">${z}</span><span class="zone-state ${on ? 'on' : 'off'}">${on ? 'ON' : 'OFF'}</span></div>`;
-  }).join('');
+
+    const row =
+        document.getElementById(
+            "zonesRow"
+        );
+
+
+    const zones = [
+
+        {
+            key: "zone1",
+            name: "Zone 1",
+            description: "Lighting / Office",
+            icon: "💡"
+        },
+
+        {
+            key: "zone2",
+            name: "Zone 2",
+            description: "HVAC / AC",
+            icon: "❄"
+        },
+
+        {
+            key: "zone3",
+            name: "Zone 3",
+            description: "Equipment",
+            icon: "🖥"
+        }
+
+    ];
+
+
+    row.innerHTML =
+        zones.map(zone => {
+
+            const on =
+                Boolean(
+                    relayState &&
+                    relayState[zone.key]
+                );
+
+
+            return `
+
+                <div class="relay-card">
+
+                    <div class="relay-name">
+
+                        ${zone.icon}
+                        &nbsp;
+                        ${zone.name}
+
+                    </div>
+
+                    <div class="relay-description">
+
+                        ${zone.description}
+
+                    </div>
+
+                    <div
+                        class="relay-state
+                        ${on ? "on" : "off"}"
+                    >
+
+                        <span
+                            class="relay-indicator"
+                        ></span>
+
+                        ${on ? "ON" : "OFF"}
+
+                    </div>
+
+                </div>
+
+            `;
+
+        }).join("");
 }
+
+
+/* =========================================================
+   KPIs
+   ========================================================= */
 
 function renderKpis(metrics) {
-  document.getElementById('kpiPeak').textContent = metrics.peak_reduction_pct.toFixed(1) + '%';
-  document.getElementById('kpiPeakSub').textContent = metrics.baseline_peak_kw.toFixed(1) + ' kW -> ' + metrics.optimized_peak_kw.toFixed(1) + ' kW';
 
-  document.getElementById('kpiCost').textContent = metrics.cost_reduction_pct.toFixed(1) + '%';
-  document.getElementById('kpiCostSub').textContent = 'Rs ' + metrics.baseline_cost_rs.toFixed(0) + ' -> Rs ' + metrics.optimized_cost_rs.toFixed(0);
-
-  document.getElementById('kpiRenewable').textContent = metrics.optimized_renewable_used_kwh.toFixed(1) + ' kWh';
-  document.getElementById('kpiRenewableSub').textContent = (metrics.renewable_gain_pct >= 0 ? '+' : '') + metrics.renewable_gain_pct.toFixed(1) + '% vs before';
-}
-
-function renderChart(curves) {
-  const labels = curves.baseline_grid_draw.map((_, i) => i + ':00');
-  const capacityLine = curves.baseline_grid_draw.map(() => curves.capacity_target_kw);
-
-  const data = {
-    labels,
-    datasets: [
-      { label: 'Before', data: curves.baseline_grid_draw, borderColor: '#E2574C', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-      { label: 'After', data: curves.optimized_grid_draw, borderColor: '#2DD4A7', backgroundColor: 'transparent', borderWidth: 2, borderDash: [5,4], tension: 0.3, pointRadius: 0 },
-      { label: 'Capacity target', data: capacityLine, borderColor: '#656C78', backgroundColor: 'transparent', borderWidth: 1, borderDash: [2,3], pointRadius: 0 },
-    ]
-  };
-
-  const options = {
-    responsive: true, maintainAspectRatio: false,
-    plugins: {
-      legend: { labels: { color: '#9AA1AC', font: { family: 'Inter', size: 12 } } }
-    },
-    scales: {
-      x: { ticks: { color: '#656C78', font: { size: 11 } }, grid: { color: '#262B33' } },
-      y: { ticks: { color: '#656C78', font: { size: 11 } }, grid: { color: '#262B33' }, title: { display: true, text: 'kW', color: '#656C78' } }
+    if (!metrics) {
+        return;
     }
-  };
 
-  if (chart) {
-    chart.data = data;
-    chart.update();
-  } else {
-    chart = new Chart(document.getElementById('loadChart'), { type: 'line', data, options });
-  }
+
+    document.getElementById(
+        "kpiPeak"
+    ).textContent =
+        Number(
+            metrics.peak_reduction_pct || 0
+        ).toFixed(1)
+        +
+        "%";
+
+
+    document.getElementById(
+        "kpiPeakSub"
+    ).textContent =
+        Number(
+            metrics.baseline_peak_kw || 0
+        ).toFixed(1)
+        +
+        " kW → "
+        +
+        Number(
+            metrics.optimized_peak_kw || 0
+        ).toFixed(1)
+        +
+        " kW";
+
+
+    document.getElementById(
+        "kpiCost"
+    ).textContent =
+        Number(
+            metrics.cost_reduction_pct || 0
+        ).toFixed(1)
+        +
+        "%";
+
+
+    document.getElementById(
+        "kpiCostSub"
+    ).textContent =
+        "₹"
+        +
+        Number(
+            metrics.baseline_cost_rs || 0
+        ).toFixed(0)
+        +
+        " → ₹"
+        +
+        Number(
+            metrics.optimized_cost_rs || 0
+        ).toFixed(0);
+
+
+    document.getElementById(
+        "kpiRenewable"
+    ).textContent =
+        Number(
+            metrics.optimized_renewable_used_kwh || 0
+        ).toFixed(2)
+        +
+        " kWh";
+
+
+    const gain =
+        Number(
+            metrics.renewable_gain_pct || 0
+        );
+
+
+    document.getElementById(
+        "kpiRenewableSub"
+    ).textContent =
+        (gain >= 0 ? "+" : "")
+        +
+        gain.toFixed(1)
+        +
+        "% vs baseline";
 }
+
+
+/* =========================================================
+   LIVE VALUES
+   ========================================================= */
 
 function renderLiveValues(latest) {
-  document.getElementById('liveZone1').textContent = latest.zone1_kw.toFixed(2) + ' kW';
-  document.getElementById('liveZone2').textContent = latest.zone2_kw.toFixed(2) + ' kW';
-  document.getElementById('liveZone3').textContent = latest.zone3_kw.toFixed(2) + ' kW';
-  document.getElementById('liveZone4').textContent = latest.zone4_kw.toFixed(2) + ' kW';
-  document.getElementById('liveRenewable').textContent = latest.renewable_kw.toFixed(2) + ' kW';
+
+    if (!latest) {
+        return;
+    }
+
+
+    document.getElementById(
+        "liveZone1"
+    ).textContent =
+        Number(
+            latest.zone1_kw || 0
+        ).toFixed(2)
+        +
+        " kW";
+
+
+    document.getElementById(
+        "liveZone2"
+    ).textContent =
+        Number(
+            latest.zone2_kw || 0
+        ).toFixed(2)
+        +
+        " kW";
+
+
+    document.getElementById(
+        "liveZone3"
+    ).textContent =
+        Number(
+            latest.zone3_kw || 0
+        ).toFixed(2)
+        +
+        " kW";
+
+
+    document.getElementById(
+        "liveRenewable"
+    ).textContent =
+        Number(
+            latest.renewable_kw || 0
+        ).toFixed(2)
+        +
+        " kW";
 }
+
+
+/* =========================================================
+   OPTIMIZATION CHART
+   ========================================================= */
+
+function renderOptimizationChart(curves) {
+
+    if (
+        !curves ||
+        !curves.baseline_grid_draw
+    ) {
+        return;
+    }
+
+
+    const labels =
+        curves.baseline_grid_draw.map(
+            (_, index) =>
+                index + ":00"
+        );
+
+
+    const capacityLine =
+        curves.baseline_grid_draw.map(
+            () =>
+                curves.capacity_target_kw
+        );
+
+
+    const data = {
+
+        labels: labels,
+
+        datasets: [
+
+            {
+                label:
+                    "Before Optimization",
+
+                data:
+                    curves.baseline_grid_draw,
+
+                borderColor:
+                    "#ff6673",
+
+                backgroundColor:
+                    "rgba(255,102,115,.08)",
+
+                borderWidth: 2,
+
+                tension: .35,
+
+                pointRadius: 2,
+
+                fill: false
+            },
+
+            {
+                label:
+                    "After Optimization",
+
+                data:
+                    curves.optimized_grid_draw,
+
+                borderColor:
+                    "#2dd4a7",
+
+                backgroundColor:
+                    "rgba(45,212,167,.08)",
+
+                borderWidth: 2,
+
+                tension: .35,
+
+                pointRadius: 2,
+
+                fill: false
+            },
+
+            {
+                label:
+                    "Capacity Target",
+
+                data:
+                    capacityLine,
+
+                borderColor:
+                    "#f5a623",
+
+                backgroundColor:
+                    "transparent",
+
+                borderWidth: 2,
+
+                borderDash:
+                    [6, 5],
+
+                pointRadius: 0
+            }
+
+        ]
+    };
+
+
+    const options = {
+
+        responsive: true,
+
+        maintainAspectRatio: false,
+
+        interaction: {
+            intersect: false,
+            mode: "index"
+        },
+
+        plugins: {
+
+            legend: {
+
+                labels: {
+
+                    color:
+                        "#a8b5c5",
+
+                    usePointStyle:
+                        true,
+
+                    font: {
+                        family:
+                            "Inter",
+                        size: 10
+                    }
+                }
+            }
+        },
+
+        scales: {
+
+            x: {
+
+                ticks: {
+
+                    color:
+                        "#64748b",
+
+                    maxTicksLimit:
+                        12
+                },
+
+                grid: {
+
+                    color:
+                        "rgba(36,57,76,.45)"
+                },
+
+                title: {
+
+                    display: true,
+
+                    text:
+                        "Hour (Next 24 Hours)",
+
+                    color:
+                        "#a8b5c5"
+                }
+            },
+
+            y: {
+
+                beginAtZero: true,
+
+                ticks: {
+                    color:
+                        "#64748b"
+                },
+
+                grid: {
+
+                    color:
+                        "rgba(36,57,76,.45)"
+                },
+
+                title: {
+
+                    display: true,
+
+                    text:
+                        "Grid Demand (kW)",
+
+                    color:
+                        "#a8b5c5"
+                }
+            }
+        }
+    };
+
+
+    if (loadChart) {
+
+        loadChart.data =
+            data;
+
+        loadChart.update();
+
+    } else {
+
+        loadChart =
+            new Chart(
+                document.getElementById(
+                    "loadChart"
+                ),
+                {
+                    type: "line",
+                    data: data,
+                    options: options
+                }
+            );
+    }
+}
+
+
+/* =========================================================
+   LIVE HISTORY CHART
+   ========================================================= */
 
 function renderLiveChart(history) {
-  const data = {
-    labels: history.timestamps,
-    datasets: [
-      { label: 'zone1', data: history.zone1_kw, borderColor: '#2DD4A7', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-      { label: 'zone2', data: history.zone2_kw, borderColor: '#F2A623', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-      { label: 'zone3', data: history.zone3_kw, borderColor: '#378ADD', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-      { label: 'zone4', data: history.zone4_kw, borderColor: '#E2574C', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-    ]
-  };
-  const options = {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { labels: { color: '#9AA1AC', font: { family: 'Inter', size: 11 } } } },
-    scales: {
-      x: { ticks: { color: '#656C78', font: { size: 10 }, maxTicksLimit: 8 }, grid: { color: '#262B33' } },
-      y: { ticks: { color: '#656C78', font: { size: 11 } }, grid: { color: '#262B33' }, title: { display: true, text: 'kW', color: '#656C78' } }
+
+    if (
+        !history ||
+        !history.timestamps
+    ) {
+        return;
     }
-  };
-  if (liveChart) {
-    liveChart.data = data;
-    liveChart.update();
-  } else {
-    liveChart = new Chart(document.getElementById('liveChart'), { type: 'line', data, options });
-  }
+
+
+    const data = {
+
+        labels:
+            history.timestamps,
+
+        datasets: [
+
+            {
+                label:
+                    "Zone 1 - Lighting",
+
+                data:
+                    history.zone1_kw || [],
+
+                borderColor:
+                    "#46c4ff",
+
+                backgroundColor:
+                    "transparent",
+
+                borderWidth: 2,
+
+                tension: .35,
+
+                pointRadius: 1
+            },
+
+            {
+                label:
+                    "Zone 2 - HVAC",
+
+                data:
+                    history.zone2_kw || [],
+
+                borderColor:
+                    "#ff9f43",
+
+                backgroundColor:
+                    "transparent",
+
+                borderWidth: 2,
+
+                tension: .35,
+
+                pointRadius: 1
+            },
+
+            {
+                label:
+                    "Zone 3 - Equipment",
+
+                data:
+                    history.zone3_kw || [],
+
+                borderColor:
+                    "#a970ff",
+
+                backgroundColor:
+                    "transparent",
+
+                borderWidth: 2,
+
+                tension: .35,
+
+                pointRadius: 1
+            }
+
+        ]
+    };
+
+
+    const options = {
+
+        responsive: true,
+
+        maintainAspectRatio: false,
+
+        interaction: {
+            intersect: false,
+            mode: "index"
+        },
+
+        plugins: {
+
+            legend: {
+
+                labels: {
+
+                    color:
+                        "#a8b5c5",
+
+                    usePointStyle:
+                        true,
+
+                    font: {
+                        family:
+                            "Inter",
+                        size: 10
+                    }
+                }
+            }
+        },
+
+        scales: {
+
+            x: {
+
+                ticks: {
+
+                    color:
+                        "#64748b",
+
+                    maxTicksLimit:
+                        8
+                },
+
+                grid: {
+
+                    color:
+                        "rgba(36,57,76,.45)"
+                },
+
+                title: {
+
+                    display: true,
+
+                    text: "Time",
+
+                    color:
+                        "#a8b5c5"
+                }
+            },
+
+            y: {
+
+                beginAtZero: true,
+
+                ticks: {
+
+                    color:
+                        "#64748b"
+                },
+
+                grid: {
+
+                    color:
+                        "rgba(36,57,76,.45)"
+                },
+
+                title: {
+
+                    display: true,
+
+                    text:
+                        "Power (kW)",
+
+                    color:
+                        "#a8b5c5"
+                }
+            }
+        }
+    };
+
+
+    if (liveChart) {
+
+        liveChart.data =
+            data;
+
+        liveChart.update();
+
+    } else {
+
+        liveChart =
+            new Chart(
+                document.getElementById(
+                    "liveChart"
+                ),
+                {
+                    type: "line",
+                    data: data,
+                    options: options
+                }
+            );
+    }
 }
+
+
+/* =========================================================
+   /latest
+   ========================================================= */
 
 async function pollLiveOnce() {
-  const base = document.getElementById('backendUrl').value.trim();
-  try {
-    const res = await fetch(base + '/latest');
-    if (res.status === 404) return; // no readings posted yet - stay quiet, not an error
-    if (!res.ok) throw new Error('Server responded with ' + res.status);
-    const data = await res.json();
-    renderLiveValues(data.latest);
-    renderLiveChart(data.history);
-  } catch (err) {
-    // live readings are secondary - don't override the main connection error banner
-  }
+
+    const base =
+        document.getElementById(
+            "backendUrl"
+        ).value.trim();
+
+
+    try {
+
+        const response =
+            await fetch(
+                base + "/latest"
+            );
+
+
+        if (
+            response.status === 404
+        ) {
+            return;
+        }
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Server responded with "
+                +
+                response.status
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        renderLiveValues(
+            data.latest
+        );
+
+
+        renderLiveChart(
+            data.history
+        );
+
+    }
+
+    catch (error) {
+
+        console.log(
+            "Live reading error:",
+            error
+        );
+    }
 }
 
-async function pollOnce() {
-  const base = document.getElementById('backendUrl').value.trim();
-  try {
-    const res = await fetch(base + '/commands');
-    if (!res.ok) throw new Error('Server responded with ' + res.status);
-    const data = await res.json();
 
-    hideError();
-    setStatus(true, 'Connected');
-    renderZones(data.relay_state);
-    renderKpis(data.metrics);
-    renderChart(data.curves);
-    document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString() + ' (backend timestamp: ' + data.generated_at + ')';
-  } catch (err) {
-    setStatus(false, 'Disconnected');
-    showError('Could not reach backend at ' + base + ' - ' + err.message + '. Check the URL and that app.py is running.');
-  }
+/* =========================================================
+   /commands
+   ========================================================= */
+
+async function pollCommandsOnce() {
+
+    const base =
+        document.getElementById(
+            "backendUrl"
+        ).value.trim();
+
+
+    try {
+
+        const response =
+            await fetch(
+                base + "/commands"
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Server responded with "
+                +
+                response.status
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        hideError();
+
+
+        setStatus(
+            true,
+            "Connected"
+        );
+
+
+        renderZones(
+            data.relay_state
+        );
+
+
+        renderKpis(
+            data.metrics
+        );
+
+
+        renderOptimizationChart(
+            data.curves
+        );
+
+
+        const generated =
+            data.generated_at
+                ? data.generated_at
+                : "N/A";
+
+
+        document.getElementById(
+            "lastUpdated"
+        ).textContent =
+            "Last updated: "
+            +
+            new Date().toLocaleTimeString()
+            +
+            " | Backend: "
+            +
+            generated;
+
+    }
+
+    catch (error) {
+
+        setStatus(
+            false,
+            "Disconnected"
+        );
+
+
+        showError(
+            "Could not reach backend at "
+            +
+            base
+            +
+            " — "
+            +
+            error.message
+            +
+            ". Check that app.py is running."
+        );
+    }
 }
+
+
+/* =========================================================
+   START POLLING
+   ========================================================= */
 
 function startPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  if (livePollTimer) clearInterval(livePollTimer);
-  pollOnce();
-  pollLiveOnce();
-  pollTimer = setInterval(pollOnce, 30000);
-  livePollTimer = setInterval(pollLiveOnce, 5000);
+
+    if (pollTimer) {
+
+        clearInterval(
+            pollTimer
+        );
+    }
+
+
+    if (livePollTimer) {
+
+        clearInterval(
+            livePollTimer
+        );
+    }
+
+
+    pollCommandsOnce();
+
+    pollLiveOnce();
+
+
+    pollTimer =
+        setInterval(
+            pollCommandsOnce,
+            30000
+        );
+
+
+    livePollTimer =
+        setInterval(
+            pollLiveOnce,
+            5000
+        );
 }
 
+
+/* =========================================================
+   AUTO CONNECT
+   ========================================================= */
+
 startPolling();
+
 </script>
 
 </body>
