@@ -1,229 +1,1034 @@
-"""
-app.py - Flask backend for the AI-powered energy management prototype
-------------------------------------------------------------------------
-Two endpoints the ESP32 talks to:
-
-  POST /readings   ESP32 sends its current 4-zone sensor readings here.
-                    Body: {"zone1": 2.3, "zone2": 5.1, "zone3": 1.8,
-                            "zone4": 6.0, "renewable": 3.2}
-
-  GET  /commands    ESP32 polls this to find out which zones should be
-                     ON or OFF right now.
-                     Response: {"zone1": true, "zone2": false,
-                                "zone3": true, "zone4": true, ...}
-
-Pipeline behind /commands:
-  1. Load recent data (real logged readings if we have enough, else fall
-     back to the synthetic dataset so the system is demoable from day one).
-  2. Forecast the next 24h per zone with forecast_engine.py.
-  3. Build a renewable forecast from the historical hour-of-day average
-     (a simple stand-in - swap in a real solar API/LDR-trained model later).
-  4. Run optimizer.py to get the recommended controllable allocation per hour.
-  5. Map the CURRENT hour's target allocation down to individual zone
-     on/off decisions (relays are binary, the optimizer's output is
-     continuous - see the mapping function below).
-
-Run with: python app.py
-Find your machine's local IP (not localhost) with `ipconfig`/`ifconfig`
-so the ESP32 can reach this over WiFi, e.g. http://192.168.1.42:5000
-"""
-
-import os
-import time
-from datetime import datetime
-
-import numpy as np
-import pandas as pd
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from datetime import datetime, timedelta
+from collections import deque
+import threading
 
-from forecast_engine import train_zone_model, forecast_next_24h
-from optimizer import optimize_day
 
 app = Flask(__name__)
-CORS(app)  # allows the local dashboard (opened as a file or on another port) to fetch this API
+CORS(app)
 
-READINGS_LOG_PATH = "readings_log.csv"
-SYNTHETIC_FALLBACK_PATH = "synthetic_energy_dataset.csv"
-MIN_REAL_ROWS_TO_USE = 24 * 7  # need at least a week of real data before trusting it alone
-MODEL_CACHE_TTL_SECONDS = 60 * 60  # retrain at most once per hour
 
-ZONE_COLUMNS = {
-    "zone1": "Zone1_Lighting_kW",
-    "zone2": "Zone2_HVAC_kW",
-    "zone3": "Zone3_PlugLoads_kW",
-    "zone4": "Zone4_Critical_kW",
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+# Grid demand is currently represented in kVA because
+# the uploaded historical dataset provides kVA readings.
+#
+# LOW_SHED_THRESHOLD:
+#     Low-priority load switches OFF.
+#
+# MEDIUM_SHED_THRESHOLD:
+#     Medium-priority load also switches OFF.
+#
+# High-priority / critical load always remains ON automatically.
+
+LOW_SHED_THRESHOLD = 2600.0
+MEDIUM_SHED_THRESHOLD = 3000.0
+
+MAX_HISTORY = 120
+
+lock = threading.Lock()
+
+
+# ============================================================
+# HISTORICAL REFERENCE PROFILE
+# ============================================================
+
+# Representative profile based on the uploaded Aug data.
+#
+# Grid demand = 33 kV Incomer-1 kVA + 33 kV Incomer-2 kVA
+#
+# This data is ONLY used so the dashboard has a meaningful
+# graph before live hardware readings start arriving.
+#
+# Once the first real /readings value is received,
+# this reference profile is cleared automatically.
+
+historical_reference = [
+
+    ("07:00", 1889.0),
+    ("08:00", 2012.0),
+    ("09:00", 2188.0),
+    ("10:00", 2736.0),
+    ("11:00", 2386.0),
+    ("12:00", 2622.0),
+    ("13:00", 2485.0),
+    ("14:00", 2505.0),
+    ("15:00", 2767.0),
+    ("16:00", 3090.0),
+    ("17:00", 3003.0),
+    ("18:00", 2697.0),
+    ("19:00", 2690.0),
+    ("20:00", 2657.0)
+
+]
+
+
+history = deque(maxlen=MAX_HISTORY)
+
+
+for timestamp, grid_kva in historical_reference:
+
+    history.append({
+        "timestamp": timestamp,
+        "grid_kva": grid_kva,
+        "source": "historical"
+    })
+
+
+# ============================================================
+# SYSTEM STATE
+# ============================================================
+
+system_state = {
+
+    "grid_kva": historical_reference[-1][1],
+
+    "relay_state": {
+
+        "high": True,
+        "medium": True,
+        "low": True
+
+    },
+
+    "control_mode": "automatic",
+
+    "load_status": "NORMAL",
+
+    "last_updated":
+        datetime.now().isoformat(timespec="seconds"),
+
+    "data_source": "historical",
+
+    "live_started": False
+
 }
-CONTROLLABLE_ZONES = ["zone1", "zone2", "zone3"]  # zone4 is priority, never shifted
-
-_model_cache = {"trained_at": 0, "fits": {}, "history": None}
 
 
-def tariff_for_hour(hour: int) -> float:
-    """Same time-of-use tariff schedule used to generate the synthetic dataset."""
-    is_peak = (6 <= hour < 10) or (18 <= hour < 22)
-    return 9.5 if is_peak else 5.5
+# ============================================================
+# AUTOMATIC LOAD SHEDDING
+# ============================================================
 
+def calculate_automatic_relays(grid_kva):
 
-def load_history() -> pd.DataFrame:
-    """Loads real logged readings if we have enough, otherwise falls back
-    to the synthetic dataset so /commands works even before real data
-    has accumulated."""
-    if os.path.exists(READINGS_LOG_PATH):
-        real = pd.read_csv(READINGS_LOG_PATH, parse_dates=["Datetime"])
-        if len(real) >= MIN_REAL_ROWS_TO_USE:
-            return real.set_index("Datetime")
+    relay_state = {
 
-    synthetic = pd.read_csv(SYNTHETIC_FALLBACK_PATH, parse_dates=["Datetime"])
-    return synthetic.set_index("Datetime")
+        "high": True,
+        "medium": True,
+        "low": True
 
-
-def get_or_train_models():
-    """Returns cached SARIMAX fits per zone, retraining if the cache is
-    stale or empty. Retraining on every request would be far too slow -
-    SARIMA fitting takes real time, so we only redo it hourly."""
-    now = time.time()
-    if now - _model_cache["trained_at"] < MODEL_CACHE_TTL_SECONDS and _model_cache["fits"]:
-        return _model_cache["fits"], _model_cache["history"]
-
-    history = load_history()
-    history.index.freq = pd.infer_freq(history.index) or "h"
-
-    fits = {}
-    for zone_key, col in ZONE_COLUMNS.items():
-        training_slice = history[col].iloc[-24 * 30:]  # last 30 days, same as the notebook
-        fits[zone_key] = train_zone_model(training_slice)
-
-    _model_cache["trained_at"] = now
-    _model_cache["fits"] = fits
-    _model_cache["history"] = history
-    return fits, history
-
-
-def renewable_forecast_next_24h(history: pd.DataFrame, last_timestamp: pd.Timestamp) -> np.ndarray:
-    """Simple stand-in renewable forecast: average renewable supply by hour-of-day
-    from history. Replace with a real solar-forecast API or a trained model on
-    your LDR readings once you have enough of that data logged."""
-    hourly_avg = history.groupby(history.index.hour)["Renewable_Supply_kW"].mean()
-    future_hours = [(last_timestamp.hour + i + 1) % 24 for i in range(24)]
-    return hourly_avg.reindex(future_hours).values
-
-
-def map_allocation_to_relays(target_kw: float, zone_forecast_kw: dict) -> dict:
-    """Translates the optimizer's continuous target allocation (kW) for the
-    CURRENT hour into binary on/off decisions per controllable zone.
-
-    Simple greedy rule: turn on the largest forecasted zones first until
-    their combined power reaches the target. This is a starting heuristic -
-    a more refined version could weight by shiftability or priority instead
-    of raw size.
-    """
-    relay_state = {"zone4": True}  # priority zone is always on
-
-    zones_sorted = sorted(CONTROLLABLE_ZONES, key=lambda z: zone_forecast_kw[z], reverse=True)
-    running_total = 0.0
-    for zone in zones_sorted:
-        if running_total < target_kw:
-            relay_state[zone] = True
-            running_total += zone_forecast_kw[zone]
-        else:
-            relay_state[zone] = False
-
-    return relay_state
-
-
-@app.route("/readings", methods=["POST"])
-def post_readings():
-    data = request.get_json(force=True)
-    required = ["zone1", "zone2", "zone3", "zone4"]
-    if not all(k in data for k in required):
-        return jsonify({"error": f"expected keys {required}"}), 400
-
-    row = {
-        "Datetime": datetime.now().replace(microsecond=0),
-        "Zone1_Lighting_kW": data["zone1"],
-        "Zone2_HVAC_kW": data["zone2"],
-        "Zone3_PlugLoads_kW": data["zone3"],
-        "Zone4_Critical_kW": data["zone4"],
-        "Renewable_Supply_kW": data.get("renewable", 0.0),
     }
 
-    file_exists = os.path.exists(READINGS_LOG_PATH)
-    pd.DataFrame([row]).to_csv(READINGS_LOG_PATH, mode="a", header=not file_exists, index=False)
 
-    return jsonify({"status": "logged", "row": {k: str(v) for k, v in row.items()}})
+    # --------------------------------------------------------
+    # PEAK DEMAND
+    #
+    # Critical load only.
+    # --------------------------------------------------------
+
+    if grid_kva >= MEDIUM_SHED_THRESHOLD:
+
+        relay_state["high"] = True
+
+        relay_state["medium"] = False
+
+        relay_state["low"] = False
+
+        status = "PEAK"
 
 
-@app.route("/commands", methods=["GET"])
-def get_commands():
-    fits, history = get_or_train_models()
-    last_timestamp = history.index[-1]
+    # --------------------------------------------------------
+    # HIGH DEMAND
+    #
+    # Low priority is shed first.
+    # --------------------------------------------------------
 
-    zone_forecasts = {}
-    for zone_key in ZONE_COLUMNS:
-        forecast_df = forecast_next_24h(fits[zone_key], last_timestamp)
-        zone_forecasts[zone_key] = forecast_df["predicted_kW"].clip(lower=0).values
+    elif grid_kva >= LOW_SHED_THRESHOLD:
 
-    priority = zone_forecasts["zone4"]
-    controllable = sum(zone_forecasts[z] for z in CONTROLLABLE_ZONES)
-    renewable = renewable_forecast_next_24h(history, last_timestamp)
-    tariff = np.array([tariff_for_hour((last_timestamp.hour + i + 1) % 24) for i in range(24)])
+        relay_state["high"] = True
 
-    result = optimize_day(priority, controllable, renewable, tariff)
+        relay_state["medium"] = True
 
-    current_hour_target = result["recommended_allocation_kw"][0]
-    current_zone_forecast_kw = {z: float(zone_forecasts[z][0]) for z in CONTROLLABLE_ZONES}
-    relay_state = map_allocation_to_relays(current_hour_target, current_zone_forecast_kw)
+        relay_state["low"] = False
 
-    return jsonify({
-        "relay_state": relay_state,
-        "current_hour_target_kw": round(current_hour_target, 2),
-        "metrics": {k: v for k, v in result.items() if not isinstance(v, list)},
-        "curves": {
-            "baseline_grid_draw": result["baseline_grid_draw"],
-            "optimized_grid_draw": result["optimized_grid_draw"],
-            "recommended_allocation_kw": result["recommended_allocation_kw"],
-            "capacity_target_kw": result["capacity_target_kw"],
-        },
-        "generated_at": last_timestamp.isoformat(),
+        status = "HIGH"
+
+
+    # --------------------------------------------------------
+    # NORMAL DEMAND
+    #
+    # All loads remain active.
+    # --------------------------------------------------------
+
+    else:
+
+        relay_state["high"] = True
+
+        relay_state["medium"] = True
+
+        relay_state["low"] = True
+
+        status = "NORMAL"
+
+
+    return relay_state, status
+
+
+# ============================================================
+# STATUS
+# ============================================================
+
+def calculate_status(grid_kva):
+
+    if grid_kva >= MEDIUM_SHED_THRESHOLD:
+
+        return "PEAK"
+
+
+    if grid_kva >= LOW_SHED_THRESHOLD:
+
+        return "HIGH"
+
+
+    return "NORMAL"
+
+
+# ============================================================
+# UPDATE AUTOMATIC CONTROL
+# ============================================================
+
+def update_automatic_control():
+
+    if system_state["control_mode"] != "automatic":
+
+        return
+
+
+    relay_state, status = calculate_automatic_relays(
+
+        system_state["grid_kva"]
+
+    )
+
+
+    system_state["relay_state"] = relay_state
+
+    system_state["load_status"] = status
+
+
+# Apply control logic to initial historical value.
+
+update_automatic_control()
+
+
+# ============================================================
+# ADD HISTORY
+# ============================================================
+
+def add_history(grid_kva, source="live"):
+
+    history.append({
+
+        "timestamp":
+            datetime.now().strftime("%H:%M:%S"),
+
+        "grid_kva":
+            round(float(grid_kva), 2),
+
+        "source":
+            source
+
     })
 
 
-@app.route("/latest", methods=["GET"])
-def get_latest():
-    if not os.path.exists(READINGS_LOG_PATH):
-        return jsonify({"error": "no readings logged yet - waiting for the ESP32 to post"}), 404
-
-    df = pd.read_csv(READINGS_LOG_PATH, parse_dates=["Datetime"])
-    if df.empty:
-        return jsonify({"error": "no readings logged yet - waiting for the ESP32 to post"}), 404
-
-    recent = df.tail(60)  # roughly last 10 minutes at a 10s post interval
-    latest_row = recent.iloc[-1]
-
-    return jsonify({
-        "latest": {
-            "timestamp": latest_row["Datetime"].isoformat(),
-            "zone1_kw": round(float(latest_row["Zone1_Lighting_kW"]), 3),
-            "zone2_kw": round(float(latest_row["Zone2_HVAC_kW"]), 3),
-            "zone3_kw": round(float(latest_row["Zone3_PlugLoads_kW"]), 3),
-            "zone4_kw": round(float(latest_row["Zone4_Critical_kW"]), 3),
-            "renewable_kw": round(float(latest_row.get("Renewable_Supply_kW", 0.0)), 3),
-        },
-        "history": {
-            "timestamps": recent["Datetime"].dt.strftime("%H:%M:%S").tolist(),
-            "zone1_kw": recent["Zone1_Lighting_kW"].round(3).tolist(),
-            "zone2_kw": recent["Zone2_HVAC_kW"].round(3).tolist(),
-            "zone3_kw": recent["Zone3_PlugLoads_kW"].round(3).tolist(),
-            "zone4_kw": recent["Zone4_Critical_kW"].round(3).tolist(),
-        }
-    })
-
+# ============================================================
+# ROOT
+# ============================================================
 
 @app.route("/", methods=["GET"])
-def health_check():
-    return jsonify({"status": "ok", "message": "Energy management backend is running"})
+def home():
 
+    return jsonify({
+
+        "status": "ok",
+
+        "message":
+            "MMMUT Priority Based Energy Management System",
+
+        "grid_unit":
+            "kVA",
+
+        "control_mode":
+            system_state["control_mode"],
+
+        "data_source":
+            system_state["data_source"]
+
+    })
+
+
+# ============================================================
+# RECEIVE LIVE GRID READING
+# ============================================================
+
+@app.route("/readings", methods=["POST"])
+def receive_reading():
+
+    data = request.get_json(silent=True) or {}
+
+
+    # Accept either grid_kva or grid_kw temporarily
+    # so older ESP32/frontend code does not immediately break.
+
+    value = data.get("grid_kva")
+
+    if value is None:
+
+        value = data.get("grid_kw")
+
+
+    if value is None:
+
+        return jsonify({
+
+            "error":
+                "grid_kva is required"
+
+        }), 400
+
+
+    try:
+
+        grid_kva = float(value)
+
+    except (TypeError, ValueError):
+
+        return jsonify({
+
+            "error":
+                "grid_kva must be numeric"
+
+        }), 400
+
+
+    if grid_kva < 0:
+
+        return jsonify({
+
+            "error":
+                "grid_kva cannot be negative"
+
+        }), 400
+
+
+    with lock:
+
+
+        # ----------------------------------------------------
+        # FIRST LIVE READING
+        #
+        # Remove historical reference graph.
+        # ----------------------------------------------------
+
+        if not system_state["live_started"]:
+
+            history.clear()
+
+            system_state["live_started"] = True
+
+
+        system_state["grid_kva"] = grid_kva
+
+        system_state["data_source"] = "live"
+
+
+        system_state["last_updated"] = (
+
+            datetime.now()
+            .isoformat(timespec="seconds")
+
+        )
+
+
+        add_history(
+            grid_kva,
+            "live"
+        )
+
+
+        if system_state["control_mode"] == "automatic":
+
+            update_automatic_control()
+
+        else:
+
+            system_state["load_status"] = (
+
+                calculate_status(grid_kva)
+
+            )
+
+
+        response = {
+
+            "message":
+                "Grid reading received",
+
+            "grid_kva":
+                grid_kva,
+
+            "load_status":
+                system_state["load_status"],
+
+            "control_mode":
+                system_state["control_mode"],
+
+            "relay_state":
+                system_state["relay_state"]
+
+        }
+
+
+    return jsonify(response)
+
+
+# ============================================================
+# LATEST READING
+# ============================================================
+
+@app.route("/latest", methods=["GET"])
+def latest():
+
+    with lock:
+
+        return jsonify({
+
+            "latest": {
+
+                "grid_kva":
+                    system_state["grid_kva"],
+
+                "timestamp":
+                    system_state["last_updated"],
+
+                "load_status":
+                    system_state["load_status"],
+
+                "data_source":
+                    system_state["data_source"]
+
+            },
+
+            "history": {
+
+                "timestamps": [
+
+                    item["timestamp"]
+                    for item in history
+
+                ],
+
+                "grid_kva": [
+
+                    item["grid_kva"]
+                    for item in history
+
+                ],
+
+                "sources": [
+
+                    item["source"]
+                    for item in history
+
+                ]
+
+            }
+
+        })
+
+
+# ============================================================
+# SYSTEM COMMANDS / DASHBOARD STATE
+# ============================================================
+
+@app.route("/commands", methods=["GET"])
+def commands():
+
+    with lock:
+
+        current_history = list(history)
+
+
+        return jsonify({
+
+            "generated_at":
+
+                datetime.now()
+                .isoformat(timespec="seconds"),
+
+
+            "grid_kva":
+
+                system_state["grid_kva"],
+
+
+            "grid_unit":
+
+                "kVA",
+
+
+            "control_mode":
+
+                system_state["control_mode"],
+
+
+            "load_status":
+
+                system_state["load_status"],
+
+
+            "data_source":
+
+                system_state["data_source"],
+
+
+            "relay_state":
+
+                system_state["relay_state"],
+
+
+            "thresholds": {
+
+                "low_shed_kva":
+                    LOW_SHED_THRESHOLD,
+
+                "medium_shed_kva":
+                    MEDIUM_SHED_THRESHOLD
+
+            },
+
+
+            "history": {
+
+                "timestamps": [
+
+                    item["timestamp"]
+                    for item in current_history
+
+                ],
+
+                "grid_kva": [
+
+                    item["grid_kva"]
+                    for item in current_history
+
+                ],
+
+                "sources": [
+
+                    item["source"]
+                    for item in current_history
+
+                ]
+
+            }
+
+        })
+
+
+# ============================================================
+# MANUAL RELAY CONTROL
+# ============================================================
+
+@app.route("/relay", methods=["POST"])
+def relay_control():
+
+    data = request.get_json(silent=True) or {}
+
+
+    priority = str(
+
+        data.get(
+            "priority",
+            ""
+        )
+
+    ).lower()
+
+
+    state = data.get("state")
+
+
+    if priority not in [
+
+        "high",
+        "medium",
+        "low"
+
+    ]:
+
+        return jsonify({
+
+            "error":
+                "priority must be high, medium or low"
+
+        }), 400
+
+
+    if not isinstance(state, bool):
+
+        return jsonify({
+
+            "error":
+                "state must be true or false"
+
+        }), 400
+
+
+    # --------------------------------------------------------
+    # CRITICAL LOAD PROTECTION
+    # --------------------------------------------------------
+
+    if priority == "high" and state is False:
+
+        return jsonify({
+
+            "error":
+                "High priority critical load cannot be switched OFF"
+
+        }), 400
+
+
+    with lock:
+
+        system_state["control_mode"] = "manual"
+
+
+        system_state[
+            "relay_state"
+        ][priority] = state
+
+
+        return jsonify({
+
+            "message":
+                f"{priority} priority relay updated",
+
+            "control_mode":
+                system_state["control_mode"],
+
+            "relay_state":
+                system_state["relay_state"]
+
+        })
+
+
+# ============================================================
+# RESUME AUTOMATIC MODE
+# ============================================================
+
+@app.route("/auto", methods=["POST"])
+def automatic_control():
+
+    with lock:
+
+        system_state["control_mode"] = "automatic"
+
+
+        update_automatic_control()
+
+
+        return jsonify({
+
+            "message":
+                "Automatic priority control resumed",
+
+            "control_mode":
+                system_state["control_mode"],
+
+            "load_status":
+                system_state["load_status"],
+
+            "relay_state":
+                system_state["relay_state"]
+
+        })
+
+
+# ============================================================
+# UPDATE THRESHOLDS
+# ============================================================
+
+@app.route("/thresholds", methods=["POST"])
+def update_thresholds():
+
+    global LOW_SHED_THRESHOLD
+
+    global MEDIUM_SHED_THRESHOLD
+
+
+    data = request.get_json(silent=True) or {}
+
+
+    try:
+
+        low_threshold = float(
+
+            data.get(
+
+                "low_shed_kva",
+
+                LOW_SHED_THRESHOLD
+
+            )
+
+        )
+
+
+        medium_threshold = float(
+
+            data.get(
+
+                "medium_shed_kva",
+
+                MEDIUM_SHED_THRESHOLD
+
+            )
+
+        )
+
+
+    except (TypeError, ValueError):
+
+        return jsonify({
+
+            "error":
+                "Thresholds must be numeric"
+
+        }), 400
+
+
+    if (
+
+        low_threshold <= 0
+
+        or
+
+        medium_threshold <= 0
+
+    ):
+
+        return jsonify({
+
+            "error":
+                "Thresholds must be greater than zero"
+
+        }), 400
+
+
+    if low_threshold >= medium_threshold:
+
+        return jsonify({
+
+            "error":
+                "Low priority threshold must be below peak threshold"
+
+        }), 400
+
+
+    with lock:
+
+        LOW_SHED_THRESHOLD = low_threshold
+
+        MEDIUM_SHED_THRESHOLD = medium_threshold
+
+
+        if system_state["control_mode"] == "automatic":
+
+            update_automatic_control()
+
+
+    return jsonify({
+
+        "message":
+            "Thresholds updated",
+
+        "thresholds": {
+
+            "low_shed_kva":
+                LOW_SHED_THRESHOLD,
+
+            "medium_shed_kva":
+                MEDIUM_SHED_THRESHOLD
+
+        }
+
+    })
+
+
+# ============================================================
+# SIMULATION
+# ============================================================
+
+@app.route("/simulate", methods=["POST"])
+def simulate():
+
+    data = request.get_json(silent=True) or {}
+
+
+    value = data.get("grid_kva")
+
+
+    if value is None:
+
+        return jsonify({
+
+            "error":
+                "grid_kva is required"
+
+        }), 400
+
+
+    try:
+
+        grid_kva = float(value)
+
+    except (TypeError, ValueError):
+
+        return jsonify({
+
+            "error":
+                "grid_kva must be numeric"
+
+        }), 400
+
+
+    if grid_kva < 0:
+
+        return jsonify({
+
+            "error":
+                "grid_kva cannot be negative"
+
+        }), 400
+
+
+    with lock:
+
+        system_state["grid_kva"] = grid_kva
+
+
+        system_state["last_updated"] = (
+
+            datetime.now()
+            .isoformat(timespec="seconds")
+
+        )
+
+
+        system_state["data_source"] = "simulation"
+
+
+        add_history(
+            grid_kva,
+            "simulation"
+        )
+
+
+        if system_state["control_mode"] == "automatic":
+
+            update_automatic_control()
+
+        else:
+
+            system_state["load_status"] = (
+
+                calculate_status(grid_kva)
+
+            )
+
+
+        return jsonify({
+
+            "grid_kva":
+                grid_kva,
+
+            "control_mode":
+                system_state["control_mode"],
+
+            "load_status":
+                system_state["load_status"],
+
+            "relay_state":
+                system_state["relay_state"]
+
+        })
+
+
+# ============================================================
+# RESET TO HISTORICAL PROFILE
+# ============================================================
+
+@app.route("/reset-demo", methods=["POST"])
+def reset_demo():
+
+    with lock:
+
+        history.clear()
+
+
+        for timestamp, grid_kva in historical_reference:
+
+            history.append({
+
+                "timestamp":
+                    timestamp,
+
+                "grid_kva":
+                    grid_kva,
+
+                "source":
+                    "historical"
+
+            })
+
+
+        system_state["grid_kva"] = (
+
+            historical_reference[-1][1]
+
+        )
+
+
+        system_state["data_source"] = "historical"
+
+        system_state["live_started"] = False
+
+        system_state["control_mode"] = "automatic"
+
+
+        system_state["last_updated"] = (
+
+            datetime.now()
+            .isoformat(timespec="seconds")
+
+        )
+
+
+        update_automatic_control()
+
+
+        return jsonify({
+
+            "message":
+                "Historical reference profile restored",
+
+            "grid_kva":
+                system_state["grid_kva"],
+
+            "relay_state":
+                system_state["relay_state"]
+
+        })
+
+
+# ============================================================
+# START SERVER
+# ============================================================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5005, debug=True)
+
+    print()
+
+    print(
+        "===================================================="
+    )
+
+    print(
+        " MMMUT PRIORITY BASED ENERGY MANAGEMENT SYSTEM"
+    )
+
+    print(
+        "===================================================="
+    )
+
+    print()
+
+    print(
+        "Grid measurement unit: kVA"
+    )
+
+    print()
+
+    print(
+        f"Grid < {LOW_SHED_THRESHOLD:.0f} kVA"
+    )
+
+    print(
+        "  HIGH   : ON"
+    )
+
+    print(
+        "  MEDIUM : ON"
+    )
+
+    print(
+        "  LOW    : ON"
+    )
+
+    print()
+
+    print(
+        f"Grid >= {LOW_SHED_THRESHOLD:.0f} kVA"
+    )
+
+    print(
+        "  HIGH   : ON"
+    )
+
+    print(
+        "  MEDIUM : ON"
+    )
+
+    print(
+        "  LOW    : OFF"
+    )
+
+    print()
+
+    print(
+        f"Grid >= {MEDIUM_SHED_THRESHOLD:.0f} kVA"
+    )
+
+    print(
+        "  HIGH   : ON"
+    )
+
+    print(
+        "  MEDIUM : OFF"
+    )
+
+    print(
+        "  LOW    : OFF"
+    )
+
+    print()
+
+    print(
+        "Critical HIGH priority load is always protected."
+    )
+
+    print()
+
+    app.run(
+
+        host="0.0.0.0",
+
+        port=5005,
+
+        debug=True
+
+    )
